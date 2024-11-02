@@ -1,10 +1,46 @@
 import { auth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
+import { getAccountDetails, getAurinkoToken } from "~/lib/aurinko";
+import { db } from "~/server/db";
+import axios from "axios";
 
-export const GET = async (req: Request) => {
+export const GET = async (req: NextRequest) => {
   const { userId } = await auth();
-  console.log("userId: ", userId);
-  return NextResponse.json({ message: " userId" });
+  if (!userId)
+    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
-  const { code } = (await req.json()) as { code: string };
+  const params = req.nextUrl.searchParams;
+  const status = params.get("status");
+  if (status !== "success")
+    return NextResponse.json(
+      { error: "Account connection failed" },
+      { status: 400 },
+    );
+
+  const code = params.get("code");
+  const token = await getAurinkoToken(code!);
+  if (!token)
+    return NextResponse.json(
+      { error: "Failed to fetch token" },
+      { status: 400 },
+    );
+
+  const accountDetails = await getAccountDetails(token.accessToken);
+
+  await db.account.upsert({
+    where: { id: token.accountId.toString() },
+    create: {
+      id: token.accountId.toString(),
+      userId,
+      token: token.accessToken,
+      provider: "Aurinko",
+      emailAddress: accountDetails.email,
+      name: accountDetails.name,
+    },
+    update: {
+      token: token.accessToken,
+    },
+  });
+
+  return NextResponse.redirect(new URL("/mail", req.url));
 };
