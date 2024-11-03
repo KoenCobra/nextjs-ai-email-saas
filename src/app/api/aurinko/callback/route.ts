@@ -3,6 +3,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getAccountDetails, getAurinkoToken } from "~/lib/aurinko";
 import { db } from "~/server/db";
 import axios from "axios";
+import { waitUntil } from "@vercel/functions";
 
 export const GET = async (req: NextRequest) => {
   const { userId } = await auth();
@@ -41,6 +42,20 @@ export const GET = async (req: NextRequest) => {
       token: token.accessToken,
     },
   });
+
+  waitUntil(
+    axios
+      .post(`${process.env.NEXT_PUBLIC_URL}/api/initial-sync`, {
+        accountId: token.accountId.toString(),
+        userId,
+      })
+      .then((res) => {
+        console.log(res.data);
+      })
+      .catch((err) => {
+        console.log(err.response.data);
+      }),
+  );
 
   return NextResponse.redirect(new URL("/mail", req.url));
 };
